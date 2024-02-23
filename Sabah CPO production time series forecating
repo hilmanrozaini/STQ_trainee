@@ -1,1 +1,154 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+from statsmodels.tsa.arima_model import ARIMA
+import seaborn as sns
+import matplotlib.dates as mdates
+
+### -----------   data preprocessing   -------------------
+dat1 = pd.read_csv('/content/drive/MyDrive/personal_projects/Sabah CPO TS forecasting/Sabah_CPO_STQ.csv')
+dat1
+
+dat1.dtypes
+
+dat1['Month'] = pd.to_datetime(dat1['Month'], format='%d/%m/%Y')
+
+dat1
+
+# Assuming you have a DataFrame named 'df' with a column named 'your_column'
+dat1['Production'] = dat1['Production'].apply(lambda x: int(x.replace(',', '')))
+dat1
+# Now, 'your_column' will contain integers without commas
+
+dat1.dtypes
+
+### ------------   original plot   -------------------------
+#import matplotlib.dates as mdates
+
+plt.plot(dat1['Month'], dat1['Production'])
+
+# Plot the forecast
+#fig = model.plot(forecast, xlabel='Year', ylabel='CPO (tonnes)')
+
+# Set the x-axis ticks to show every year
+#gca().xaxis.set_major_locator(mdates.YearLocator())
+
+plt.title('Malaysia Crude Palm Oil Demand')
+
+
+# Annotate the last point
+last_point_index = dat1['Month'].idxmax()  # Assuming 'Month' is in datetime format
+last_point_value = dat1['Production'].iloc[-1]
+
+plt.annotate(f"{last_point_value:.1f}", xy=(dat1['Month'].iloc[-1], last_point_value), xycoords='data',
+             xytext=(50, -30), textcoords='offset points',
+             arrowprops=dict(arrowstyle="->", linewidth=1.5))
+
+#ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+#ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%b'))
+
+# Show the plot
+plt.show()
+
+### -----------------   FB Prophet Library time series forecasting --------------------
+from prophet import Prophet
+import matplotlib.dates as mdates
+
+
+# Prepare the data
+dat1 = dat1[['Month', 'Production']].copy()
+dat1.columns = ['ds', 'y']
+
+
+# Ensure 'ds' is of datetime data type and 'y' is numeric
+dat1['ds'] = pd.to_datetime(dat1['ds'])
+dat1['y'] = pd.to_numeric(dat1['y'])
+
+
+# Create a Prophet model
+model = Prophet(changepoint_prior_scale=1)
+
+# Fit the model to the data
+model.fit(dat1)
+
+# Create future dates for forecasting
+future = model.make_future_dataframe(periods=12, freq='M')
+
+# Perform the forecasting
+forecast = model.predict(future)
+
+# --------------------------------------------
+### NOTES on training & testing dataset for prophet library
+
+# In the case of the Prophet library,
+# when you use the make_future_dataframe function to create future dates for forecasting,
+#  and then make predictions with the predict function,
+# Prophet internally separates the data into training and testing periods.
+# conclusion, prophet library has a built-in training functions
+
+# --------------------------------------------------------
+
+# Plot the forecast
+fig = model.plot(forecast, xlabel='Year', ylabel='CPO (tonnes)')
+
+# Filter the forecast for the year 2022
+#forecast_2022 = forecast[forecast['ds'].dt.year == 2022]
+
+#adjusting the seasonality & flexibility
+#model = Prophet(yearly_seasonality=True, monthly_seasonality=True, daily_seasonality=False, seasonality_mode='additive', changepoint_prior_scale=0.8)
+
+model = Prophet(yearly_seasonality=True, weekly_seasonality=False, seasonality_mode='additive', changepoint_prior_scale=1)
+
+# Add monthly seasonality manually
+model.add_seasonality(name='monthly', period=30.44, fourier_order=5)  # Assuming an average month length of 30.44 days
+
+# Fit the model to the data
+#model.fit(dat1)
+
+
+# Get the last point of the forecast
+last_point = forecast.tail(1)
+
+# Annotate the value on the last point
+plt.annotate(f"{last_point['yhat'].values[0]:.1f}", xy=(last_point['ds'].values[0], last_point['yhat'].values[0]), xycoords='data',
+             xytext=(50, -30), textcoords='offset points',
+             arrowprops=dict(arrowstyle="->", linewidth=1.5))
+
+# Annotate the value on the year 2025
+#plt.annotate(f"{forecast_2025['yhat'].values[0]:.1f}", xy=(forecast_2025['ds'].values[0], forecast_2025['yhat'].values[0]), xycoords='data',
+#             xytext=(-30, 30), textcoords='offset points',
+#             arrowprops=dict(arrowstyle="->", linewidth=1.5))
+
+# Set the x-axis ticks to show every year
+#fig.gca().xaxis.set_major_locator(mdates.YearLocator())
+fig.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+
+#ax = fig.plot(figsize=(15,5))
+fig.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%b'))
+plt.xticks(rotation=80)
+
+plt.title('Malaysia Palm Crude Oil Demand Forecast (12-months)')
+
+# Show the plot
+plt.show()
+
+### ---------------   performance metrics (MAPE) -------------------
+from sklearn.metrics import mean_absolute_percentage_error, mean_absolute_error
+
+# Extract relevant columns
+y_true = dat1['y']
+y_pred = forecast['yhat']
+
+# Align the time periods
+common_dates = y_true.index.intersection(y_pred.index)
+y_true_aligned = y_true.loc[common_dates]
+y_pred_aligned = y_pred.loc[common_dates]
+
+# Calculate MAPE
+mape = mean_absolute_percentage_error(y_true_aligned, y_pred_aligned)
+mae = mean_absolute_error(y_true_aligned, y_pred_aligned)
+
+print(f"Mean Absolute Error (MAE): {mae:.2f}")
+print(f"Mean Absolute Percentage Error (MAPE): {mape * 100 :.4f}%")
 
